@@ -1,0 +1,69 @@
+version: '2.2'
+services:
+    autoheal:
+        restart: always
+        image: willfarrell/autoheal
+        environment:
+          - AUTOHEAL_CONTAINER_LABEL=all
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock 
+    elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.14.0
+        container_name: elasticsearch
+        environment: 
+            - cluster.name=docker-cluster
+            - bootstrap.memory_lock=true
+            - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+            - discovery.type=single-node
+        healthcheck:
+            test: ["CMD", "curl", "-s", "-f", "http://localhost:9200/_cat/health"]
+            interval: 3s
+            timeout: 3s
+            retries: 10
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - esdata1:/usr/share/elasticsearch/data
+            - ./config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+        ports:
+            - 9200:9200
+
+
+    logstash:
+        image: docker.elastic.co/logstash/logstash:7.14.0
+        container_name: logstash
+        volumes:
+            - ./config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+            - ./config/pipeline:/usr/share/logstash/pipeline:ro
+        ports:
+            - "5000:5000"
+            - "9600:9600"
+        environment:
+            LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+        depends_on:
+            elasticsearch:
+                condition: service_healthy
+
+            
+    kibana:
+        image: docker.elastic.co/kibana/kibana:7.14.0
+        container_name: kibana
+        environment:
+            ELASTICSEARCH_URL: "http://elasticsearch:9200"
+        depends_on:
+            elasticsearch:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD", "curl", "-s", "-f", "http://localhost:5601/api/status"]
+            interval: 3s
+            timeout: 3s
+            retries: 50
+        ports:
+        - 5601:5601
+
+    
+volumes: 
+    esdata1:
+        driver: local
